@@ -1,8 +1,9 @@
 from flask import Blueprint,render_template,request
 
-from app.api import bookshelf
+from app.api import bookshelf, desk_payload
 from app.faults import LedgerError,REASONS
 from app.job import MixingJob
+from app.ledger.dossier import Dossier
 from app.ledger.signoff import certify
 from app.receipts.clock import studio_label
 from app.receipts.packet import read_sample
@@ -10,7 +11,7 @@ from app.receipts.units import grams
 from app.settings import EDITION
 
 LINKS={'weighings':'称量原件','tares':'容器皮重','lots':'颜料批号','recovery':'回桶分料',
-       'balance':'库存核料','history':'工单留档','receipt':'证据签发'}
+       'balance':'库存核料','issuance':'签发工作台','history':'工单留档','receipt':'证据签发'}
 ACTIONS={'OPEN':'期初','ISSUE':'领用','APPLY':'上件','LOSS':'损耗','RETURN':'回桶'}
 pages=Blueprint('studio',__name__)
 
@@ -23,15 +24,22 @@ def desk(screen='overview'):
     sample=request.args.get('sample','dirty')
     key=request.args.get('key')
     receipt=None
+    dossier=None
     if key:
         record=bookshelf().require(key)
         data,meta=record['snapshot'],record['manifest']
         sample=meta['source'] if meta['source']!='upload' else sample
         if screen=='receipt':
             receipt=certify(record)
+        if screen=='issuance':
+            payload=desk_payload(key)
+            dossier={'decisions':payload['decisions'],'receipts':payload['receipts']}
+            data={**data,'issuance':payload['issuance']}
     else:
         job=MixingJob(read_sample(sample))
         data,meta=job.snapshot(),{'order':job.job.order,'edition':EDITION,'cutoff':job.job.cutoff.isoformat()}
+        if screen=='issuance':
+            dossier={'decisions':{},'receipts':[]}
     history=bookshelf().listing() if screen=='history' else []
     rejects=[]
     if screen=='weighings':
@@ -46,4 +54,4 @@ def desk(screen='overview'):
         rejects=data[screen]['invalid_receipts']
     return render_template('base.html',screen=screen,links=LINKS,sample=sample,key=key,data=data,meta=meta,
                            receipt=receipt,history=history,labels=REASONS,actions=ACTIONS,grams=grams,
-                           studio_label=studio_label,rejects=rejects)
+                           studio_label=studio_label,rejects=rejects,dossier=dossier)

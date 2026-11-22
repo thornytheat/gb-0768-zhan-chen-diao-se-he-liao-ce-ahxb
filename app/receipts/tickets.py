@@ -30,8 +30,12 @@ def eligible(rows, job):
     accepted=[]
     for ticket, options in sorted(by_ticket.items()):
         options.sort(key=lambda row:(row['received_utc'],row['line']))
+        pots={row['data']['pot'] for row in options}
         distinct={tuple(row['data'][k] for k in ('pot','container','action','lot','gross','unit'))+(row['at'],) for row in options}
-        if len(distinct)>1:
+        if len(pots)>1:
+            # 同号称量票指向多只罐：双原件均保留，整组挂起待复核，不按推测归罐。
+            rejected.extend(row | {'code':'TICKET_SPLIT'} for row in options)
+        elif len(distinct)>1:
             rejected.extend(row | {'code':'TICKET_CONFLICT'} for row in options)
         else:
             accepted.append(options[0])

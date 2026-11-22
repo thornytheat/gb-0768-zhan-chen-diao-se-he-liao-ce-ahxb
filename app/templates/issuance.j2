@@ -1,0 +1,46 @@
+{% set signed_pots = dossier.receipts | map(attribute='pot') | list %}
+<section class="panel folio"><div class="folio-head"><h2>分罐签发工作台</h2>
+{% if not key %}<span class="tag tag-warn">试算视图 · 封存后才能复核与签发</span>{% endif %}
+</div>
+<div class="stub"><span>可先签 {{ data.issuance.ready_pots|length }} 罐 · 挂起 {{ data.issuance.held_pots|length }} 罐 · 已签 {{ signed_pots|length }} 罐</span><span>挂起罐的推算回桶成分不计入确认库存</span></div>
+<div class="scroll"><table><thead><tr><th>罐号</th><th>状态</th><th>挂起原因</th><th>同号票</th><th>留罐争议 g</th><th>回桶 g</th><th>签发操作</th></tr></thead><tbody>
+{% for p in data.issuance.pots %}
+{% set rid = dossier.receipts | selectattr('pot','equalto',p.pot) | map(attribute='receipt_id') | first %}
+{% set decision = dossier.decisions.get(p.pot) %}
+{% set st = 'SIGNED' if rid else ('CONFIRMED' if decision and decision.decision=='confirm' else ('REJECTED' if decision and decision.decision=='reject' else p.status)) %}
+<tr data-pot="{{ p.pot }}" data-status="{{ st }}"><th scope="row">{{ p.pot }}</th>
+<td><span class="tag tag-{{ st|lower }}">{{ {'READY':'可先签','HELD':'挂起待复核','CONFIRMED':'复核确认','REJECTED':'复核驳回','SIGNED':'已签发'}[st] }}</span></td>
+<td>{{ p.hold_labels|join('；') or '—' }}</td>
+<td>{{ p.split_tickets|join(', ') or '—' }}</td>
+<td>{{ grams(p.totals.disputed_mg) }}</td>
+<td>{{ grams(p.totals.returned_mg) }}</td>
+<td class="desk-actions">
+{% if rid %}<a href="{{ url_for('palette.one_receipt',key=key,rid=rid) if key else '#' }}">查收据 {{ rid[:8] }}</a>
+{% elif st=='REJECTED' %}<span class="quiet">驳回，不予签发</span>
+{% elif key %}
+<button type="button" class="desk-sign" data-pot="{{ p.pot }}" {% if st=='HELD' %}disabled title="复核确认后才能签发"{% endif %}>签发收据</button>
+{% if st=='HELD' %}<button type="button" class="desk-review" data-pot="{{ p.pot }}" data-decision="confirm">复核确认</button><button type="button" class="desk-review desk-danger" data-pot="{{ p.pot }}" data-decision="reject">复核驳回</button>{% endif %}
+{% else %}<span class="quiet">封存后操作</span>{% endif %}
+</td></tr>
+{% endfor %}
+</tbody></table></div></section>
+
+<section class="panel folio rejects"><h2>同号称量票争议原件</h2>
+<div class="scroll"><table><thead><tr><th>票号</th><th>涉及罐</th><th>原件行</th><th>容器</th><th>毛重</th><th>收件时刻 UTC</th></tr></thead><tbody>
+{% for g in data.issuance.split_groups %}
+{% for r in g.lines %}<tr><th scope="row">{{ g.ticket }}</th><td>{{ r.pot }}</td><td>{{ r.line }}</td><td>{{ r.container }}</td><td>{{ r.gross }} {{ r.unit }}</td><td>{{ r.received_utc }}</td></tr>{% endfor %}
+{% else %}<tr><td colspan="6">无同号双罐争议。</td></tr>{% endfor %}
+</tbody></table></div></section>
+
+<section class="panel folio"><h2>确认库存核料（不含挂起罐）</h2>
+{% set t=data.issuance.confirmed_totals %}
+<dl class="kpis"><div><dt>期初</dt><dd>{{ grams(t.opening_mg) }}</dd></div><div><dt>领用</dt><dd>{{ grams(t.issued_mg) }}</dd></div><div><dt>上件</dt><dd>{{ grams(t.applied_mg) }}</dd></div><div><dt>损耗</dt><dd>{{ grams(t.loss_mg) }}</dd></div><div><dt>回桶余料</dt><dd>{{ grams(t.returned_mg) }}</dd></div><div><dt>留罐争议</dt><dd>{{ grams(t.disputed_mg) }}</dd></div></dl>
+<p class="quiet">挂起罐复核确认后，其重量才会计入本栏并允许签发分罐收据。</p></section>
+
+<section class="panel folio"><h2>各罐成分推算（挂起罐仅供复核参考，不作实数）</h2>
+<div class="scroll"><table><thead><tr><th>罐号</th><th>批号</th><th>期初 g</th><th>领用 g</th><th>上件 g</th><th>损耗 g</th><th>回桶 g</th><th>留罐 g</th></tr></thead><tbody>
+{% for p in data.issuance.pots %}{% for line in p.lot_lines %}
+<tr class="{{ 'row-held' if p.status=='HELD' }}"><th scope="row">{{ p.pot }}</th><td>{{ line.lot }}</td>
+{% for k in ('opening_mg','issued_mg','applied_mg','loss_mg','returned_mg','disputed_mg') %}<td>{{ grams(line[k]) }}</td>{% endfor %}</tr>
+{% endfor %}{% else %}<tr><td colspan="8">暂无罐数据。</td></tr>{% endfor %}
+</tbody></table></div></section>

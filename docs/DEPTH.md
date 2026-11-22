@@ -14,6 +14,7 @@
 | M5 库存与损耗对账 | 按批号核对存量、损耗与回桶申报 | `GET /api/trial/dirty/balance` | `app/blend/balance.py` `app/blend/claims.py` | `tests/test_balance.py` |
 | M6 批次留档复跑 | 封存工单及重跑 | `POST /api/books` | `app/ledger/bookshelf.py` `app/ledger/closeout.py` | `tests/test_history.py` |
 | M7 收据证据签发 | 签发可独立复核的成分收据 | `GET /api/export/{key}` | `app/ledger/signoff.py` | `tests/test_receipt.py` |
+| M8 分罐签发工作台 | 无争议罐先签、争议罐挂起复核后放行 | `GET /api/desk/{key}` | `app/ledger/desk.py` `app/ledger/dossier.py` | `tests/test_issuance_desk.py` `tests/test_review_signoff.py` `tests/test_desk_concurrency.py` |
 
 ## 陷阱登记
 
@@ -30,6 +31,7 @@
 | TRAP-15 | g、kg、mg 混用 | 净重差几个数量级 | 转整数毫克 | `app/receipts/units.py` | `tests/test_tares.py::test_mass_units` |
 | TRAP-24 | 等余数 | 尾差归属漂移 | 余数相同按批号 | `app/blend/share.py` | `tests/test_recovery.py::test_exact_rounding_residue` |
 | TRAP-25 | 两种皮重同时生效 | 误取第一或最后版本 | 双版本保留且隔离 | `app/receipts/tare.py` | `tests/test_tares.py::test_overlapping_tare_versions` |
+| TRAP-26 | 同号称量票指向多罐 | 按推测归罐把推算成分当实数 | 双原件保留并整组 `TICKET_SPLIT` 隔离，相关罐挂起待复核 | `app/receipts/tickets.py` `app/ledger/desk.py` | `tests/test_issuance_desk.py::test_same_ticket_pointing_at_two_pots_is_split_not_conflict` |
 
 ## 对账规则
 
@@ -40,3 +42,11 @@
 ## 已知边界
 
 假定单罐均匀混合。同批号出罐来源可追至入罐记录集，分摊只精确到颜料批号；现场结团或挥发需用实测数据补录损耗。留档目录须支持同卷硬链接。
+
+## 分罐签发规则（M8）
+
+- 同号票指向多只罐（`TICKET_SPLIT`）或期末仍有留罐争议（`PENDING_MATERIAL`）的罐为挂起罐，其按比例推算的回桶成分仅供复核参考，不进确认库存、不能签发。
+- 无争议罐在签发工作台标「可先签」，直接出分罐收据，不被争议罐阻塞。
+- 复核以罐为单位提交 `confirm` 或 `reject`，结论终局：同结论重试幂等返回（`reused=true`），相反结论返回 `REVIEW_CONFLICT`。文件锁（线程锁 + `fcntl.flock`）保证两人并发提交时只落一份决策。
+- 确认后的罐其重量才计入确认库存核料并允许签发（收据 `basis=review_confirmed`）；驳回罐永久排除在本轮签发外。
+- 分罐收据编号由留档键与罐号确定性派生（`receipt_id`），重试同一签发出同一份；已签收据可经 `GET /api/receipts/{key}` 与 `/api/receipts/{key}/{rid}` 查回。复核与签发状态写入 `{key}.dossier`，同目录临时文件 `os.replace` 原子发布。

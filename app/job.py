@@ -3,11 +3,12 @@ from functools import cached_property
 from app.blend.balance import settle
 from app.blend.lots import identify
 from app.blend.replay import rebuild
+from app.ledger.desk import build_desk
 from app.receipts.packet import parse_packet
 from app.receipts.tare import weigh
 from app.receipts.tickets import eligible
 
-VIEWS=('weighings','tares','lots','recovery','balance')
+VIEWS=('weighings','tares','lots','recovery','balance','issuance')
 
 
 class MixingJob:
@@ -38,6 +39,10 @@ class MixingJob:
     @cached_property
     def balance(self):
         return settle(self.recovery,self.data['claims'][0])
+
+    @cached_property
+    def issuance(self):
+        return build_desk(self)
 
     def snapshot(self):
         return {stage:getattr(self,stage) for stage in VIEWS}

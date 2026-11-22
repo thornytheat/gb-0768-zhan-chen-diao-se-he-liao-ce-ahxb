@@ -36,3 +36,35 @@ pots?.addEventListener('change', () => {
     row.hidden = pots.value !== 'all' && row.dataset.pot !== pots.value;
   }
 });
+
+async function deskAction(url, body, feedback) {
+  const response = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)});
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.message);
+  return result;
+}
+
+const desk = document.querySelector('.desk-actions');
+if (desk) {
+  const key = new URL(location.href).searchParams.get('key');
+  const feedback = document.querySelector('#studio-feedback');
+  document.addEventListener('click', async event => {
+    const button = event.target.closest('button.desk-sign,button.desk-review');
+    if (!button) return;
+    const pot = button.dataset.pot;
+    const path = button.classList.contains('desk-sign') ? 'sign' : 'review';
+    const payload = path === 'sign' ? {pot} : {pot, decision: button.dataset.decision};
+    button.disabled = true;
+    feedback.hidden = false;
+    feedback.textContent = '正在提交';
+    try {
+      const result = await deskAction(`/api/desk/${key}/${path}`, payload, feedback);
+      feedback.textContent = result.reused ? '同一结论已存在，未重复出件' : '操作已留档';
+      location.reload();
+    } catch (error) {
+      feedback.textContent = error.message || '操作失败，请重试';
+      button.disabled = false;
+    }
+  });
+}

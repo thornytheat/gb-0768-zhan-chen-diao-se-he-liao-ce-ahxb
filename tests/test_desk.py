@@ -16,3 +16,16 @@ def test_backed_receipt_links_to_signed_artifact(client):
 def test_failed_preview_has_explanation(client):
     response=client.get('/api/trial/unlisted/tares')
     assert (response.status_code,response.json['code'])==(404,'SAMPLE_ABSENT')
+
+
+def test_issuance_desk_shows_held_and_ready_pots(client):
+    page=client.get('/studio/issuance?sample=dispute').get_data(as_text=True)
+    assert '分罐签发工作台' in page and '同号称量票争议原件' in page
+    assert '挂起待复核' in page and '可先签' in page
+    assert '封存后才能复核与签发' in page
+
+
+def test_backed_issuance_desk_offers_review_actions(client):
+    key=client.post('/api/books',json={'sample':'dispute'}).json['key']
+    page=client.get('/studio/issuance?key='+key).get_data(as_text=True)
+    assert 'desk-review' in page and 'desk-sign' in page
